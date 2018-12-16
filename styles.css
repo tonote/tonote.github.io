@@ -1,0 +1,145 @@
+@import url(https://fonts.googleapis.com/css?family=Roboto:400,300,300italic,100,100italic,400italic,500,500italic,700,700italic&subset=latin,cyrillic);
+html, body, h1, h2, h3, h4, h5, h6 {
+    font-family: 'Roboto', sans-serif;
+}
+
+[type="checkbox"]
+{
+    vertical-align:middle;
+}
+
+.main {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.w3-bar {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.w3-bar a img {
+    height: 32px;
+    width: 32px;
+}
+
+.w3-bar span.w3-bar-item {
+    -webkit-flex: 1;
+    -ms-flex: 1;
+    flex: 1;
+    font-size: 1.3em;
+    margin: 0 16px;
+    padding: 0;
+    color: #fefefe;
+    float: none;
+    max-width: none;
+    font-weight: 400;
+    line-height: 64px;
+}
+
+.login-card {
+    text-align: center;
+    width: 100%;
+    max-width: 500px;
+}
+
+.note-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: stretch;
+    width: 100%;
+    max-width: 450px;
+    margin: 0 8px 8px 8px;
+}
+
+.note-card .w3-container p{
+    word-wrap: break-word;
+    margin-top: 0;
+}
+
+.margin-left-16 {
+    margin-left: 16px;
+}
+
+.note-card header {
+
+}
+
+.note-card footer {
+    color: #404040;
+    font-size: 16px;
+    margin-top: auto;
+}
+
+.check-item {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+}
+/* google button */
+.google-button {
+    height: 40px;
+    border-width: 0;
+    background: white;
+    color: #737373;
+    border-radius: 5px;
+    white-space: nowrap;
+    box-shadow: 0px 0px 4px 4px rgba(0, 0, 0, 0.05);
+    transition-property: background-color, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: ease-in-out;
+    font-family: Roboto, serif;
+    font-weight: 600;
+    padding: 0;
+    margin: 16px;
+}
+.google-button:focus,
+.google-button:hover {
+    box-shadow: 0px 0px 5px 5px rgba(0,0,0,0.1);
+}
+
+.google-button__icon {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 8px 0 8px 8px;
+    width: 18px;
+    height: 18px;
+    box-sizing: border-box;
+}
+
+.google-button__text {
+    display: inline-block;
+    vertical-align: middle;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: 'Roboto',arial,sans-serif;
+}
+
+.text-button {
+    width: auto;
+    height: auto;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 12pt;
+}
+
+.app-bar .text-button {
+    color: #fefefe;
+}
+
+.message {
+    font-size: 18px;
+    align: center;
+}
+
+@media screen and (max-width: 500px) {
+    .note-card {
+        margin: 0 0 8px 0;
+    }
+}
