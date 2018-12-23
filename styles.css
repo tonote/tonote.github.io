@@ -20,6 +20,11 @@ html, body, h1, h2, h3, h4, h5, h6 {
     justify-content: flex-start;
     align-items: center;
     margin-bottom: 16px;
+    background-color:  #2e7d32;
+    color: #FFF;
+    -webkit-box-shadow: 1px 3px 5px 0px rgba(0,0,0,0.75);
+    -moz-box-shadow: 1px 3px 5px 0px rgba(0,0,0,0.75);
+    box-shadow: 1px 3px 5px 0px rgba(0,0,0,0.75);
 }
 
 .w3-bar a img {
@@ -54,6 +59,7 @@ html, body, h1, h2, h3, h4, h5, h6 {
     width: 100%;
     max-width: 450px;
     margin: 0 8px 8px 8px;
+    border-radius: 4px;
 }
 
 .note-card .w3-container p{

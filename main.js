@@ -1,4 +1,4 @@
-const CLIENT_ID = '778261473062-02j8ibct1arua33fh15vf5qo6h50jn6u.apps.googleusercontent.com';
+const CLIENT_ID = '778261473062-tr2ciii73p0pcgv5af7qre1cuhgmbhnm.apps.googleusercontent.com';
 const API_KEY = 'AIzaSyCCshlpHHBSNtrrnUd0BqZs6FmjKJ9YM5k';
 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
@@ -18,7 +18,7 @@ const contentContainer = document.getElementsByClassName('main')[0];
 
 function createTextNote(note) {
     const container = document.createElement('div');
-    container.classList.add('note-card', 'note-card-text', 'w3-card-4');
+    container.classList.add('note-card', 'note-card-text', 'w3-card-2');
 
     const header = document.createElement('header');
     header.classList.add('margin-left-16');
@@ -115,7 +115,7 @@ function updateSignInStatus(isSignedIn) {
         signoutButton.style.display = 'none';
 
         const loginContainer = document.createElement('div');
-        loginContainer.classList.add('login-card', 'w3-card-4', 'w3-white');
+        loginContainer.classList.add('login-card', 'w3-card-2', 'w3-white');
 
         const headerContainer = document.createElement('header');
         const header = document.createElement('h3');
