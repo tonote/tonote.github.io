@@ -1,4 +1,4 @@
-const CLIENT_ID = '778261473062-tr2ciii73p0pcgv5af7qre1cuhgmbhnm.apps.googleusercontent.com';
+const CLIENT_ID = '778261473062-02j8ibct1arua33fh15vf5qo6h50jn6u.apps.googleusercontent.com';
 const API_KEY = 'AIzaSyCCshlpHHBSNtrrnUd0BqZs6FmjKJ9YM5k';
 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
@@ -9,14 +9,12 @@ const signoutButton = document.getElementById('signout_button');
 
 loadedFile = null;
 
+let notes = new Object();
+
 function handleClientLoad() {
     gapi.load('client:auth2', initClient);
 }
 const contentContainer = document.getElementsByClassName('main')[0];
-
-notes.forEach(note => {
-    contentContainer.appendChild(createTextNote(note));
-});
 
 function createTextNote(note) {
     const container = document.createElement('div');
@@ -67,7 +65,7 @@ function createTextNote(note) {
     footer.appendChild(dateString);
     container.appendChild(footer);
     container.style.backgroundColor = toColor(note.color.value);
-    return container;
+    contentContainer.appendChild(container);
 }
 
 function toColor(num) {
@@ -109,13 +107,11 @@ function showMessage(message) {
 }
 
 function updateSignInStatus(isSignedIn) {
+    contentContainer.innerHTML = "";
     if (isSignedIn) {
         signoutButton.style.display = 'block';
-
-        contentContainer.innerHTML = "";
         listNotes();
     } else {
-        authorizeButton.style.display = 'block';
         signoutButton.style.display = 'none';
 
         const loginContainer = document.createElement('div');
@@ -147,7 +143,7 @@ function updateSignInStatus(isSignedIn) {
         button.appendChild(iconSpan);
 
         const buttonTextSpan = document.createElement('span');
-        buttonTextSpan.classList.add('iconSpan');
+        buttonTextSpan.classList.add('google-button__text');
         const buttonText = document.createTextNode('Sign in with Google');
         buttonTextSpan.appendChild(buttonText);
         button.appendChild(buttonTextSpan);
@@ -184,7 +180,7 @@ function loadFile(file) {
     })
         .then(function(response) {
             const loadedFile = JSON.parse(response.body);
-            const notes = new Object();
+            notes = new Object();
 
             loadedFile.notes.sort(function(a, b) {
                 return b.edited - a.edited;

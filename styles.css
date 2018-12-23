@@ -65,10 +65,6 @@ html, body, h1, h2, h3, h4, h5, h6 {
     margin-left: 16px;
 }
 
-.note-card header {
-
-}
-
 .note-card footer {
     color: #404040;
     font-size: 16px;
@@ -80,6 +76,10 @@ html, body, h1, h2, h3, h4, h5, h6 {
     flex-direction: row;
     justify-content: flex-start;
     align-items: center;
+}
+
+.check-item label {
+    word-wrap: break-word;
 }
 /* google button */
 .google-button {
