@@ -27,7 +27,8 @@ html, body, h1, h2, h3, h4, h5, h6 {
     box-shadow: 1px 3px 5px 0px rgba(0,0,0,0.75);
 }
 
-.w3-bar a img {
+.w3-bar a img,
+.w3-bar a span {
     height: 32px;
     width: 32px;
 }
