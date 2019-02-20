@@ -2,7 +2,7 @@ const CLIENT_ID = '778261473062-tr2ciii73p0pcgv5af7qre1cuhgmbhnm.apps.googleuser
 const API_KEY = 'AIzaSyCCshlpHHBSNtrrnUd0BqZs6FmjKJ9YM5k';
 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
-const SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 const authorizeButton = document.getElementById('authorize_button');
 const signoutButton = document.getElementById('signout_button');
