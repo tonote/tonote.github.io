@@ -36,7 +36,7 @@ function createTextNote(note) {
         content.appendChild(contentText);
     } else if (note.checkings === 'html') {
         const contentText = document.createElement('div');
-        contentText.innerHtml = note.content;
+        contentText.innerHTML = note.content;
         content.appendChild(contentText);
     } else {
         const checkings = note.checkings.split('');
