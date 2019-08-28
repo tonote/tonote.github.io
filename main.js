@@ -34,6 +34,10 @@ function createTextNote(note) {
         const contentText = document.createElement('p');
         contentText.appendChild(document.createTextNode(note.content));
         content.appendChild(contentText);
+    } else if (note.checkings === 'html') {
+        const contentText = document.createElement('div');
+        contentText.innerHtml = note.content;
+        content.appendChild(contentText);
     } else {
         const checkings = note.checkings.split('');
         const labels = note.content.split('\n');
