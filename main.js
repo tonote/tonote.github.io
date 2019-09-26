@@ -203,7 +203,7 @@ function loadFile(file) {
             });
 
             loadedFile.notes.forEach(function(entry) {
-                if (!entry.hasOwnProperty('iv')) {
+                if (!entry.hasOwnProperty('iv') && entry.state == 0) {
                     notes[entry.id] = entry;
                     createTextNote(entry);
                 }
