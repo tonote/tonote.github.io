@@ -96,11 +96,14 @@ function initClient() {
         discoveryDocs: DISCOVERY_DOCS,
         scope: SCOPES
     }).then(function () {
-        // Listen for sign-in state changes.
         gapi.auth2.getAuthInstance().isSignedIn.listen(updateSignInStatus);
 
-        // Handle the initial sign-in state.
-        updateSignInStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+        if (gapi.auth2.getAuthInstance().isSignedIn.get()) {
+            listNotes();
+        } else {
+            showSignInDialog();
+        }
+
     }, function(error) {
         showMessage(JSON.stringify(error, null, 2));
     });
@@ -111,57 +114,66 @@ function showMessage(message) {
 }
 
 function updateSignInStatus(isSignedIn) {
-    contentContainer.innerHTML = "";
     if (isSignedIn) {
-        signoutButton.style.display = 'block';
+        gtag('event', 'login', { method : 'Google' });
         listNotes();
     } else {
-        signoutButton.style.display = 'none';
-
-        const loginContainer = document.createElement('div');
-        loginContainer.classList.add('login-card', 'w3-card-2', 'w3-white');
-
-        const headerContainer = document.createElement('header');
-        const header = document.createElement('h3');
-        header.appendChild(document.createTextNode('Sign In'));
-        headerContainer.appendChild(header);
-
-        const loginContentContainer = document.createElement('div');
-        loginContentContainer.classList.add('w3-container');
-        const content = document.createElement('p');
-        content.appendChild(document.createTextNode('Use Google Account to see your notes'));
-        loginContentContainer.appendChild(content);
-
-        const footerContainer = document.createElement('footer');
-        const button = document.createElement('button');
-        button.classList.add('google-button');
-        button.onclick = handleAuthClick;
-
-        const iconSpan = document.createElement('span');
-        iconSpan.classList.add('google-button__icon');
-
-        const googleIcon = document.createElement('object');
-        googleIcon.type = 'image/svg+xml';
-        googleIcon.data = './assets/google-icon.svg';
-        iconSpan.appendChild(googleIcon);
-        button.appendChild(iconSpan);
-
-        const buttonTextSpan = document.createElement('span');
-        buttonTextSpan.classList.add('google-button__text');
-        const buttonText = document.createTextNode('Sign in with Google');
-        buttonTextSpan.appendChild(buttonText);
-        button.appendChild(buttonTextSpan);
-        footerContainer.appendChild(button);
-
-        loginContainer.appendChild(headerContainer);
-        loginContainer.appendChild(loginContentContainer);
-        loginContainer.appendChild(footerContainer);
-
-        contentContainer.appendChild(loginContainer);
+        gtag('event', 'signout');
+        showSignInDialog();
     }
 }
 
+function showSignInDialog() {
+    contentContainer.innerHTML = "";
+    signoutButton.style.display = 'none';
+
+    const loginContainer = document.createElement('div');
+    loginContainer.classList.add('login-card', 'w3-card-2', 'w3-white');
+
+    const headerContainer = document.createElement('header');
+    const header = document.createElement('h3');
+    header.appendChild(document.createTextNode('Sign In'));
+    headerContainer.appendChild(header);
+
+    const loginContentContainer = document.createElement('div');
+    loginContentContainer.classList.add('w3-container');
+    const content = document.createElement('p');
+    content.appendChild(document.createTextNode('Use Google Account to see your notes'));
+    loginContentContainer.appendChild(content);
+
+    const footerContainer = document.createElement('footer');
+    const button = document.createElement('button');
+    button.classList.add('google-button');
+    button.onclick = handleAuthClick;
+
+    const iconSpan = document.createElement('span');
+    iconSpan.classList.add('google-button__icon');
+
+    const googleIcon = document.createElement('object');
+    googleIcon.type = 'image/svg+xml';
+    googleIcon.data = './assets/google-icon.svg';
+    iconSpan.appendChild(googleIcon);
+    button.appendChild(iconSpan);
+
+    const buttonTextSpan = document.createElement('span');
+    buttonTextSpan.classList.add('google-button__text');
+    const buttonText = document.createTextNode('Sign in with Google');
+    buttonTextSpan.appendChild(buttonText);
+    button.appendChild(buttonTextSpan);
+    footerContainer.appendChild(button);
+
+    loginContainer.appendChild(headerContainer);
+    loginContainer.appendChild(loginContentContainer);
+    loginContainer.appendChild(footerContainer);
+
+    contentContainer.appendChild(loginContainer);
+}
+
 function listNotes() {
+    contentContainer.innerHTML = "";
+    signoutButton.style.display = 'block';
+    gtag('event', 'view_item_list');
+
     gapi.client.drive.files.list({
         'q': "name = 'notes_backup.json' and trashed = false",
         'pageSize': 10,
