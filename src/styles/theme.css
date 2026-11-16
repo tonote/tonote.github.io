@@ -1,0 +1,50 @@
+/* Shared values from Android res/values/colors.xml and dimen.xml. */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f4;
+  --surface: #ffffff;
+  --category-default: #f9f9f9;
+  --category-default-text: #101010;
+  --surface-variant: #e3e8e2;
+  --text: #383838;
+  --text-heading: #101010;
+  --text-muted: #707070;
+  --border: #d8d8d8;
+  --primary: #276c2b;
+  --primary-text: #ffffff;
+  --primary-container: #8ecc88;
+  --on-primary-container: #002204;
+  --selection: #d5e8ce;
+  --danger: #ba1a1a;
+  --shadow: 0 1px 3px rgb(0 0 0 / 16%);
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1b1b1f;
+  --surface: #252529;
+  --category-default: var(--surface);
+  --category-default-text: var(--text);
+  --surface-variant: #2a2931;
+  --text: #d2d2d2;
+  --text-heading: #ffffff;
+  --text-muted: #aaa6ad;
+  --border: #464646;
+  --primary: #a4d49a;
+  --primary-text: #123810;
+  --primary-container: #31552d;
+  --on-primary-container: #c9efc0;
+  --selection: #354332;
+  --danger: #ffb4ab;
+  --shadow: 0 1px 3px rgb(0 0 0 / 35%);
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 16px/1.5 Roboto, 'Segoe UI', sans-serif; margin: 0; }
+button, input, textarea, select { font: inherit; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .45; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+input, textarea { caret-color: var(--primary); }
+input[type='checkbox'] { accent-color: var(--primary); }
+a { color: var(--primary); }
+.icon { width: 24px; height: 24px; flex-shrink: 0; vertical-align: middle; }

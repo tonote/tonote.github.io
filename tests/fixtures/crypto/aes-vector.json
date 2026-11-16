@@ -1,0 +1,6 @@
+{
+  "keyHex": "00112233445566778899aabbccddeeff",
+  "ivHex": "ffeeddccbbaa99887766554433221100",
+  "plaintext": "Hello, ToNote! 📝 — cyrillic тест",
+  "ciphertextBase64": "z2ei11bjrRw9reHBBFNEZqEsMT1BkFdie5s2Ei9aUO4NoPNTkk3zgQYZ2ihMV+mt"
+}

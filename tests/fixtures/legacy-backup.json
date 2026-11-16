@@ -1,0 +1,152 @@
+{
+  "version": "1.63",
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "updated": 1722000000000,
+  "checker": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo=",
+  "salt": "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=",
+  "colors": [
+    {
+      "id": "color-white",
+      "edited": 1721000000000,
+      "value": -394759,
+      "theme": "light",
+      "showAsFilter": true,
+      "priority": 0
+    },
+    {
+      "id": "color-red",
+      "edited": 1721000000000,
+      "value": -65536,
+      "theme": "dark",
+      "showAsFilter": true,
+      "priority": 1
+    },
+    {
+      "id": "color-blue",
+      "edited": 1721000000000,
+      "value": -16776961,
+      "theme": "light",
+      "showAsFilter": false,
+      "priority": 2
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-plain-1",
+      "edited": 1722000000000,
+      "created": 1721900000000,
+      "title": "Shopping List",
+      "content": "Buy milk, eggs, bread",
+      "notify": false,
+      "showInWidget": true,
+      "color": {
+        "id": "color-white",
+        "edited": 1721000000000,
+        "value": -394759,
+        "theme": "light",
+        "showAsFilter": true,
+        "priority": 0
+      },
+      "checkings": "",
+      "events": [],
+      "pinned": true,
+      "state": 0,
+      "attachments": [],
+      "priority": 0
+    },
+    {
+      "id": "note-rich-1",
+      "edited": 1722000001000,
+      "created": 1721900001000,
+      "title": "Meeting Notes",
+      "content": "Discussed Q4 roadmap",
+      "notify": false,
+      "showInWidget": false,
+      "color": {
+        "id": "color-red",
+        "edited": 1721000000000,
+        "value": -65536,
+        "theme": "dark",
+        "showAsFilter": true,
+        "priority": 1
+      },
+      "checkings": "h<b>Important:</b> review budget",
+      "events": [],
+      "pinned": false,
+      "state": 0,
+      "attachments": [],
+      "priority": 1
+    },
+    {
+      "id": "note-list-1",
+      "edited": 1722000002000,
+      "created": 1721900002000,
+      "title": "Todo",
+      "content": "Task 1\nTask 2\nTask 3",
+      "notify": true,
+      "showInWidget": false,
+      "color": {
+        "id": "color-blue",
+        "edited": 1721000000000,
+        "value": -16776961,
+        "theme": "light",
+        "showAsFilter": false,
+        "priority": 2
+      },
+      "checkings": "010",
+      "events": [],
+      "pinned": false,
+      "state": 0,
+      "attachments": [],
+      "priority": 0
+    },
+    {
+      "id": "note-folder-1",
+      "edited": 1722000003000,
+      "created": 1721900003000,
+      "title": "Work",
+      "content": "",
+      "notify": false,
+      "showInWidget": false,
+      "color": {
+        "id": "color-white",
+        "edited": 1721000000000,
+        "value": -394759,
+        "theme": "light",
+        "showAsFilter": true,
+        "priority": 0
+      },
+      "checkings": "f",
+      "events": [],
+      "pinned": false,
+      "state": 0,
+      "attachments": [],
+      "priority": 0
+    },
+    {
+      "id": "note-encrypted-1",
+      "edited": 1722000004000,
+      "created": 1721900004000,
+      "title": "U2FsdGVkX1+abc123=",
+      "content": "U2FsdGVkX1+def456=",
+      "notify": false,
+      "showInWidget": false,
+      "color": {
+        "id": "color-red",
+        "edited": 1721000000000,
+        "value": -65536,
+        "theme": "dark",
+        "showAsFilter": true,
+        "priority": 1
+      },
+      "checkings": "U2FsdGVkX1+ghi789=",
+      "events": [],
+      "pinned": false,
+      "state": 0,
+      "parentId": "note-folder-1",
+      "attachments": [],
+      "priority": 0,
+      "iv": "YWJjZGVmZw=="
+    }
+  ]
+}

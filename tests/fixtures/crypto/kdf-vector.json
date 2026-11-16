@@ -1,0 +1,7 @@
+{
+  "password": "test123",
+  "salt": "00112233445566778899aabbccddeeff",
+  "digestHex": "d6cd41b99a05cc725d6a5c85e6cec9964e04d1a841fa5dea7a3d02c4244056213052e6a73d0ccd2b21925e620bf911a38c156ca1b8544a94ab1570a3f39d3ee2",
+  "keyHex": "d6cd41b99a05cc725d6a5c85e6cec996",
+  "checkerHex": "73b87ad0"
+}
