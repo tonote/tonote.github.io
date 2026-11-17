@@ -55,7 +55,20 @@ export default defineConfig(({ mode }) => {
           background_color: '#ffffff',
           display: 'standalone',
         },
-        workbox: { navigateFallback: '/index.html' },
+        workbox: {
+          navigateFallback: '/index.html',
+          // HashRouter only needs the app shell at / or /index.html. Static
+          // pages (including malformed Android links) must never open notes.
+          navigateFallbackAllowlist: [/^\/(?:index\.html)?(?:\?|$)/],
+          runtimeCaching: [{
+            urlPattern: ({ url, request, sameOrigin }) => sameOrigin && request.mode === 'navigate' && /\/{2,}/.test(url.pathname),
+            handler: async ({ url }) => {
+              const target = new URL(url.href);
+              target.pathname = target.pathname.replace(/\/{2,}/g, '/');
+              return Response.redirect(target.href, 302);
+            },
+          }],
+        },
       }),
     ],
     // Single build-time constant: dev-id in dev, prod-id in prod. No ternary
