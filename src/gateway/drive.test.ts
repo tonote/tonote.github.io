@@ -213,6 +213,7 @@ describe('Drive REST client', () => {
 
       const calledUrl = mockFetch.mock.calls[0][0] as string;
       expect(calledUrl).toContain(encodeURIComponent("'folder-id' in parents"));
+      expect(new URL(calledUrl).searchParams.get('q')).toContain("mimeType != 'application/vnd.google-apps.folder'");
     });
 
     it('filters by name prefix', async () => {

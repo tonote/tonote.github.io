@@ -2,7 +2,6 @@ import type { LegacyBackupContent } from './legacyTypes';
 import { normalizeEncodedBytes } from '../crypto/aes';
 import { parseNote } from './serialize';
 import { isDeleted } from './types';
-import { DAY_MS, TRASH_DAYS } from './constants';
 
 export function parseLegacyBackup(json: string): LegacyBackupContent {
   const content = JSON.parse(json) as LegacyBackupContent;
@@ -14,7 +13,6 @@ export function parseLegacyBackup(json: string): LegacyBackupContent {
     if (isDeleted(note)) throw new Error('Unexpected marker in backup');
     note.color = raw.color;
     if (note.iv) { if (!content.salt) throw new Error('Encrypted backup has no salt'); note.encryptionSalt = content.salt; }
-    if (note.state >= 2) { note.trashedAt ??= note.edited; note.purgeAfter ??= note.trashedAt + TRASH_DAYS * DAY_MS; }
     return note;
   });
   return content;

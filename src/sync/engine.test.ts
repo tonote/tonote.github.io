@@ -118,9 +118,9 @@ it('retries an uncertain successful write without creating a duplicate or losing
   await expect(sendPending(drive)).rejects.toThrow('timeout'); expect(await db.outbox.count()).toBe(1);
   await sendPending(drive); expect(drive.documents.size).toBe(1); expect(drive.writes).toBe(1); expect(await db.outbox.count()).toBe(0);
 });
-it('retains edited when expiring trash and allows a newer restoration to replace the marker', async () => {
-  drive.seed(note('n', { state: 2, trashedAt: 100, purgeAfter: 200 }));
-  await fullSync(drive); expect(drive.documents.get('n')!.value).toMatchObject({ deleted: true, edited: 100 });
+it('records the deadline when expiring trash and allows a newer restoration to replace the marker', async () => {
+  drive.seed(note('n', { state: 2, edited: 100 }));
+  await fullSync(drive); expect(drive.documents.get('n')!.value).toMatchObject({ deleted: true, autoExpired: true, edited: 100 + 15 * 86400000 });
   await saveNote(note('n', { edited: 300 })); await fullSync(drive);
   expect(isDeleted(drive.documents.get('n')!.value)).toBe(false); expect((await db.notes.get('n'))!.state).toBe(0);
 });
@@ -131,7 +131,7 @@ it('cascades folder markers even over newer children and removes truly orphaned 
 });
 it('hides children of trashed folders and preserves never-uploaded local parents', async () => {
   const future = Date.now() + 100000;
-  drive.seed(note('folder', { state: 2, trashedAt: 100, purgeAfter: future, checkings: 'f' }));
+  drive.seed(note('folder', { state: 2, edited: future, checkings: 'f' }));
   drive.seed(note('child', { parentId: 'folder' }));
   await saveNote(note('new-parent', { checkings: 'f' })); await saveNote(note('new-child', { parentId: 'new-parent' }));
   await fullSync(drive);
@@ -178,7 +178,7 @@ it('does not apply a late response from a signed-out session', async () => {
 });
 
 it('restores parent_removed children before expiring stale inherited retention times', async () => {
-  drive.seed(note('child', { parentId: 'folder', state: 3, trashedAt: 10, purgeAfter: 20 }));
+  drive.seed(note('child', { parentId: 'folder', state: 3, edited: 10 }));
   drive.seed(note('folder', { checkings: 'f', state: 0, edited: 200 }));
   await fullSync(drive);
   expect((await db.notes.get('child'))?.state).toBe(0);
@@ -193,7 +193,7 @@ it('waits for Android to finish an interrupted migration and only displays the b
 });
 
 it('synchronization continues past a failed new-file upload and retries only the failed note', async () => {
-  drive.pendingAttachmentIds.add('missing-file'); drive.failedAttachmentIds.add('missing-file');
+  drive.pendingUploadIds.add('missing-file'); drive.failedAttachmentIds.add('missing-file');
   await saveNote(note('broken', { attachments: [{ id: 'missing-file' }] }));
   for (let i = 0; i < 175; i++) await saveNote(note(`healthy-${i}`));
   const progress: import('../state/syncStore').SyncProgress[] = [];
@@ -232,7 +232,7 @@ it('displays a backup without requiring old attachment bytes or publishing any f
   expect(drive.attachmentUploads).toBe(0);
 });
 it('does not reupload confirmed new-file bytes after an uncertain JSON write', async () => {
-  await saveNote(note('n', { attachments: [{ id: 'new-file' }] })); drive.pendingAttachmentIds.add('new-file');
+  await saveNote(note('n', { attachments: [{ id: 'new-file' }] })); drive.pendingUploadIds.add('new-file');
   drive.afterWrite = async () => { drive.afterWrite = undefined; throw new Error('timeout'); };
   await expect(sendPending(drive)).rejects.toThrow('timeout');
   expect(drive.attachmentUploads).toBe(1); expect(await db.outbox.count()).toBe(1);
@@ -241,7 +241,7 @@ it('does not reupload confirmed new-file bytes after an uncertain JSON write', a
 });
 it('finishes a pending new-file upload even when the JSON already matches Drive', async () => {
   const source = note('n', { attachments: [{ id: 'new-file' }] });
-  drive.seed(source); await saveNote(source); drive.pendingAttachmentIds.add('new-file');
+  drive.seed(source); await saveNote(source); drive.pendingUploadIds.add('new-file');
   await sendPending(drive);
   expect(drive.attachmentUploads).toBe(1); expect(drive.writes).toBe(0);
   expect(await db.outbox.count()).toBe(0);

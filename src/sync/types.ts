@@ -1,7 +1,7 @@
 import type { Color, Note } from '../domain/types';
 import type { DriveFile } from '../gateway/driveTypes';
 
-export interface DeletedNote { schemaVersion: 3; id: string; deleted: true; edited: number; trashedAt: number; purgeAfter: number }
+export interface DeletedNote { schemaVersion: 3; id: string; deleted: true; edited: number; autoExpired?: true }
 export type NoteDocument = Note | DeletedNote;
 export interface DeletedColor { id: string; edited: number; deleted: true }
 export type ColorDocument = Color | DeletedColor;
@@ -23,7 +23,6 @@ export interface SyncRecord {
   remote?: DriveFile;
   accepted?: NoteDocument;
   needsPull?: boolean;
-  cleanupVersion?: string;
 }
 export interface CleanupTask { id: string; noteId: string; attachmentId: string }
 export const isDeleted = (doc: NoteDocument): doc is DeletedNote => 'deleted' in doc && doc.deleted === true;

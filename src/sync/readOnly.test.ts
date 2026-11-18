@@ -25,7 +25,7 @@ beforeEach(async () => {
   drive.legacy = { version: '1', id: 'backup', updated: 100, colors: [DEFAULT_CATEGORY], notes: [note('n')] };
 });
 it('reads only the snapshot and performs no writes, uploads, cleanup, or migration on Drive', async () => {
-  const writeConfig = vi.spyOn(drive, 'writeConfig'), cleanup = vi.spyOn(drive, 'cleanupAttachment');
+  const writeConfig = vi.spyOn(drive, 'writeConfig'), cleanup = vi.spyOn(drive, 'maintainAttachments');
   const upload = vi.spyOn(drive, 'uploadPendingAttachments');
   expect(await fullSync(drive)).toMatchObject({ kind: 'readonly', uploaded: 0, downloaded: 1 });
   await sendPending(drive);
@@ -36,7 +36,7 @@ it('reads only the snapshot and performs no writes, uploads, cleanup, or migrati
   expect(drive.lists).toBe(0); expect(drive.reads).toBe(0); expect(drive.writes).toBe(0);
 });
 it('refreshes the snapshot exactly, including removals, without purging trash or orphaned entries', async () => {
-  drive.legacy!.notes.push(note('trash', { state: 2, trashedAt: 1, purgeAfter: 2 }), note('orphan', { parentId: 'missing' }));
+  drive.legacy!.notes.push(note('trash', { state: 2, edited: 1 }), note('orphan', { parentId: 'missing' }));
   await fullSync(drive);
   expect((await db.backupNotes.get('trash'))?.state).toBe(2); expect(await db.backupNotes.get('orphan')).toBeDefined();
   drive.legacy!.notes = [note('n', { content: 'updated snapshot' })];

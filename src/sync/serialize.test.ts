@@ -19,11 +19,25 @@ it('does not accept the obsolete schema or structurally invalid documents', () =
   expect(() => parseNote(JSON.stringify(note('n')))).toThrow('schema');
   expect(() => parseNote(serializeNote(note('n')), 'different')).toThrow('ID');
   expect(() => parseNote(serializeNote(note('n', { iv: 'AAAAAAAAAAAAAAAAAAAAAA==' })))).toThrow('encryptionSalt');
-  expect(() => parseNote('{"schemaVersion":3,"id":"n","edited":1,"deleted":true}')).toThrow('marker');
+  expect(() => parseNote('{"schemaVersion":3,"id":"n","edited":1,"deleted":true,"autoExpired":"true"}')).toThrow('marker');
 });
 it('serializes deletion as a minimal document and prefers it only on equal or greater edited', () => {
   const deleted = marker(note('n'));
-  expect(Object.keys(JSON.parse(serializeNote(deleted))).sort()).toEqual(['deleted', 'edited', 'id', 'purgeAfter', 'schemaVersion', 'trashedAt']);
+  expect(Object.keys(JSON.parse(serializeNote(deleted))).sort()).toEqual(['deleted', 'edited', 'id', 'schemaVersion']);
   expect(compareDocuments(deleted, note('n'))).toBeGreaterThan(0);
   expect(compareDocuments(deleted, note('n', { edited: 200 }))).toBeLessThan(0);
+});
+it('deletes encrypted content with one minimal marker and no attachment metadata', () => {
+  const deleted = marker(note('n', { title: 'private', content: 'private', iv: 'AAAAAAAAAAAAAAAAAAAAAA==', attachments: [{ id: 'file', name: 'private filename' }] }));
+  expect(parseNote(serializeNote(deleted))).toEqual(deleted);
+  expect(Object.keys(deleted).sort()).toEqual(['deleted', 'edited', 'id', 'schemaVersion']);
+  expect(serializeNote(deleted)).not.toMatch(/private|content|title|encryptionSalt|"iv"/);
+});
+
+it('reads false as a manual marker and round-trips the automatic marker flag', () => {
+  const manual = marker(note('n'));
+  expect(parseNote(JSON.stringify({ ...manual, autoExpired: false }))).toEqual(manual);
+  const automatic = marker(note('n'), 15 * 86400000 + 100, true);
+  expect(parseNote(serializeNote(automatic))).toEqual(automatic);
+  expect(compareDocuments(automatic, note('n', { edited: 100 }))).toBeGreaterThan(0);
 });

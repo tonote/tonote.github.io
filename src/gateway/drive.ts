@@ -104,7 +104,7 @@ export async function findFileByName(name: string, folderId?: string): Promise<D
 }
 
 export async function listChildren(folderId: string, namePrefix?: string): Promise<DriveFile[]> {
-  let q = `'${folderId}' in parents and trashed=false`;
+  let q = `'${folderId}' in parents and trashed=false and mimeType != 'application/vnd.google-apps.folder'`;
   if (namePrefix) q += ` and name contains '${namePrefix}'`;
   const encoded = encodeURIComponent(q);
   const files: DriveFile[] = [];
@@ -268,31 +268,37 @@ export async function uploadNamedBlob(id: string, name: string, blob: Blob, fold
   if (!location || new URL(location).origin !== 'https://www.googleapis.com') throw new Error('Invalid upload location');
   return (await authedFetch(location, { method: 'PUT', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob })).json();
 }
-export async function backupAttachmentIds(folder: string): Promise<Set<string>> {
-  const file = await findFileByName('notes_backup.json', folder);
-  const ids = new Set<string>();
-  if (!file) return ids;
-  // Every restorable backup revision protects its attachment references.
+export async function backupRevisionIds(fileId: string): Promise<string[]> {
+  const revisions: string[] = [];
   let pageToken = '';
   do {
-    const response = await authedFetch(`${DRIVE_BASE}/files/${encodeURIComponent(file.id)}/revisions?fields=nextPageToken,revisions(id)&pageSize=1000${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
+    const response = await authedFetch(`${DRIVE_BASE}/files/${encodeURIComponent(fileId)}/revisions?fields=nextPageToken,revisions(id)&pageSize=1000${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`);
     const data = await response.json();
     for (const revision of data.revisions ?? []) {
-      const content = await (await authedFetch(`${DRIVE_BASE}/files/${encodeURIComponent(file.id)}/revisions/${encodeURIComponent(revision.id)}?alt=media`)).json();
-      if (!Array.isArray(content.notes)) throw new Error('Cannot establish backup attachment references');
-      for (const note of content.notes) {
-        if (!Array.isArray(note.attachments)) throw new Error('Unknown backup attachment references');
-        for (const item of note.attachments) { if (typeof item.id !== 'string') throw new Error('Invalid backup attachment'); ids.add(item.id); }
-      }
+      if (typeof revision.id !== 'string') throw new Error('Unknown backup revision');
+      revisions.push(revision.id);
     }
     pageToken = data.nextPageToken ?? '';
   } while (pageToken);
-  // Include the head even if revision enumeration omitted it.
-  const content = JSON.parse(await downloadText(file.id));
-  if (!Array.isArray(content.notes)) throw new Error('Invalid backup');
-  for (const note of content.notes) {
-    if (!Array.isArray(note.attachments)) throw new Error('Unknown backup attachment references');
-    for (const item of note.attachments) { if (typeof item.id !== 'string') throw new Error('Invalid backup attachment'); ids.add(item.id); }
+  return revisions.sort();
+}
+
+export async function backupAttachmentOwners(fileId: string, revisions: string[]): Promise<Map<string, string>> {
+  const owners = new Map<string, string>();
+  function collect(content: { notes?: { id: string; attachments: { id: string }[] }[] }) {
+    if (!Array.isArray(content.notes)) throw new Error('Invalid backup');
+    for (const note of content.notes) {
+      if (typeof note.id !== 'string' || !Array.isArray(note.attachments)) throw new Error('Unknown backup attachment references');
+      for (const item of note.attachments) {
+        if (typeof item.id !== 'string') throw new Error('Invalid backup attachment');
+        owners.set(item.id, note.id);
+      }
+    }
   }
-  return ids;
+  for (const revision of revisions) {
+    const response = await authedFetch(`${DRIVE_BASE}/files/${encodeURIComponent(fileId)}/revisions/${encodeURIComponent(revision)}?alt=media`);
+    collect(await response.json());
+  }
+  collect(JSON.parse(await downloadText(fileId)));
+  return owners;
 }

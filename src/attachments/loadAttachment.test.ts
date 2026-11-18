@@ -27,7 +27,7 @@ it('does not cache failed downloads, so opening again can retry', async () => {
   await expect(loadAttachment({ id: 'uuid', driveFileId: 'remote-file' })).rejects.toThrow('Offline');
   expect(await attachmentsRepo.get('uuid')).toBeUndefined();
 });
-it('looks up only owner-qualified names and historical bare UUIDs', async () => {
+it('looks up the owned filename then falls back to the historical UUID', async () => {
   vi.mocked(findFolder).mockResolvedValue({ id: 'folder', name: 'backup' });
   vi.mocked(findFileByName).mockResolvedValue(null);
   await expect(loadAttachment({ id: 'file', noteId: 'note' })).rejects.toThrow('not found');

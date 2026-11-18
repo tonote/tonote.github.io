@@ -7,11 +7,11 @@ import { DriveGatewayAdapter } from './driveGateway';
 import * as api from '../gateway/drive';
 import { serializeNote } from './serialize';
 import { attachmentsRepo } from '../db/attachmentsRepo';
-import { fullSync } from './engine';
+import { fullSync, sendPending } from './engine';
 import { DEFAULT_CATEGORY } from '../domain/color';
 vi.mock('../gateway/drive', async original => {
   const actual = await original<typeof import('../gateway/drive')>();
-  return { ...actual, findFolder: vi.fn(), findFileByName: vi.fn(), generateFileId: vi.fn(), createFolder: vi.fn(), writeDocument: vi.fn(), readFile: vi.fn(), downloadText: vi.fn(), fileMetadata: vi.fn(), listChildren: vi.fn(), downloadBlob: vi.fn(), uploadNamedBlob: vi.fn(), renameFile: vi.fn(), backupAttachmentIds: vi.fn(), deleteFile: vi.fn() };
+  return { ...actual, findFolder: vi.fn(), findFileByName: vi.fn(), generateFileId: vi.fn(), createFolder: vi.fn(), writeDocument: vi.fn(), readFile: vi.fn(), downloadText: vi.fn(), fileMetadata: vi.fn(), listChildren: vi.fn(), downloadBlob: vi.fn(), uploadNamedBlob: vi.fn(), renameFile: vi.fn(), backupAttachmentOwners: vi.fn(), deleteFile: vi.fn() };
 });
 let gateway: DriveGatewayAdapter;
 beforeEach(async () => {
@@ -42,36 +42,36 @@ it('rejects a stale server version during fallback preflight and refuses duplica
   vi.mocked(api.listChildren).mockResolvedValue([{ id: '1', name: 'tonote.note.n.json' }, { id: '2', name: 'tonote.note.n.json' }]);
   await expect(gateway.listNotes('folder')).rejects.toThrow('Duplicate');
 });
-it('uploads only new pending bytes and removes the local copy after Drive confirms', async () => {
+it('uploads only new pending bytes and keeps bytes until the JSON is confirmed', async () => {
   await attachmentsRepo.put('file', new Blob(['bytes']));
   vi.mocked(api.fileMetadata).mockRejectedValue(new api.DriveError(404, 'Not found', 'url'));
   vi.mocked(api.uploadNamedBlob).mockResolvedValue({ id: 'allocated-id', name: 'tonote.attach.n.file' });
   await gateway.uploadPendingAttachments('folder', note('n', { attachments: [{ id: 'old-missing' }, { id: 'file' }] }));
   expect(api.uploadNamedBlob).toHaveBeenCalledWith('allocated-id', 'tonote.attach.n.file', expect.anything(), 'folder');
-  expect(await attachmentsRepo.get('file')).toBeUndefined();
+  expect((await attachmentsRepo.get('file'))?.pending).toBe(true);
   expect(vi.mocked(api.findFileByName).mock.calls.every(([name]) => !name.includes('old-missing'))).toBe(true);
 });
-it('preserves backup references during cleanup', async () => {
-  vi.mocked(api.findFileByName).mockImplementation(async name => name === 'tonote.attach.n.file' ? { id: 'binary', name } : name === 'tonote.note.n.json' ? { id: 'n', name } : null);
-  vi.mocked(api.readFile).mockResolvedValue({ text: serializeNote(note('n')) });
-  vi.mocked(api.backupAttachmentIds).mockResolvedValue(new Set(['file']));
-  expect(await gateway.cleanupAttachment('folder', 'n', 'file')).toBe(false); expect(api.deleteFile).not.toHaveBeenCalled();
-});
-
 it('reuses a confirmed existing pending upload without duplicating its file', async () => {
   await attachmentsRepo.put('file', new Blob(['bytes']));
-  vi.mocked(api.fileMetadata).mockResolvedValue({ id: 'backup-file-id', name: 'old-photo-name' });
+  vi.mocked(api.fileMetadata).mockResolvedValue({ id: 'backup-file-id', name: 'file' });
   await gateway.uploadPendingAttachments('folder', note('n', { attachments: [{ id: 'file', driveFileId: 'backup-file-id' }] }));
   expect(api.fileMetadata).toHaveBeenCalledWith('backup-file-id');
-  expect(api.renameFile).toHaveBeenCalledWith('backup-file-id', 'tonote.attach.n.file');
+  expect(api.renameFile).not.toHaveBeenCalled();
   expect(api.uploadNamedBlob).not.toHaveBeenCalled();
-  expect(await attachmentsRepo.get('file')).toBeUndefined();
+  expect((await attachmentsRepo.get('file'))?.pending).toBe(true);
 });
 
 it('trusts existing JSON references without any attachment lookups, reads or downloads', async () => {
   await gateway.uploadPendingAttachments('folder', note('n', { attachments: [{ id: 'missing', driveFileId: 'old-id' }] }));
   expect(api.findFileByName).not.toHaveBeenCalled(); expect(api.fileMetadata).not.toHaveBeenCalled();
   expect(api.downloadBlob).not.toHaveBeenCalled(); expect(api.uploadNamedBlob).not.toHaveBeenCalled();
+});
+it('keeps pending bytes when the saved Drive ID belongs to a different filename', async () => {
+  await attachmentsRepo.put('file', new Blob(['bytes']));
+  vi.mocked(api.fileMetadata).mockResolvedValue({ id: 'wrong-id', name: 'different-uuid' });
+  await expect(gateway.uploadPendingAttachments('folder', note('n', { attachments: [{ id: 'file', driveFileId: 'wrong-id' }] }))).rejects.toThrow('conflict');
+  expect((await attachmentsRepo.get('file'))?.pending).toBe(true);
+  expect(api.uploadNamedBlob).not.toHaveBeenCalled();
 });
 it('never creates the Drive folder when Android has not initialized storage', async () => {
   vi.mocked(api.findFolder).mockResolvedValue(null);
@@ -106,7 +106,7 @@ it('retains new local bytes after a failed upload and reuses the allocated ID on
   expect((await attachmentsRepo.get('file'))?.pending).toBe(true);
   await new DriveGatewayAdapter().uploadPendingAttachments('folder', source);
   expect(api.generateFileId).toHaveBeenCalledOnce();
-  expect(await attachmentsRepo.get('file')).toBeUndefined();
+  expect((await attachmentsRepo.get('file'))?.pending).toBe(true);
 });
 
 it('reopening with 176 unchanged notes uses only folder/config metadata and one listing', async () => {
@@ -140,4 +140,23 @@ it('reopening with 176 unchanged notes uses only folder/config metadata and one 
   expect(api.readFile).toHaveBeenCalledExactlyOnceWith('note-82');
   expect(api.fileMetadata).toHaveBeenCalledTimes(2);
   expect(api.writeDocument).not.toHaveBeenCalled();
+});
+
+it('recreates a collected upload after a failed JSON write, then releases bytes after confirmation', async () => {
+  const source = note('n', { attachments: [{ id: 'file', noteId: 'n' }] });
+  await attachmentsRepo.put('file', new Blob(['bytes']));
+  await db.notes.put(source);
+  await db.outbox.add({ noteId: 'n', op: 'upsert', queuedAt: 1 });
+  vi.mocked(api.fileMetadata).mockRejectedValue(new api.DriveError(404, 'Missing', 'url'));
+  vi.mocked(api.generateFileId).mockResolvedValueOnce('first').mockResolvedValueOnce('note-id').mockResolvedValueOnce('replacement');
+  vi.mocked(api.uploadNamedBlob).mockImplementation(async (id, name) => ({ id, name }));
+  vi.spyOn(gateway, 'ensureFolder').mockResolvedValue('folder');
+  vi.spyOn(gateway, 'readConfig').mockResolvedValue(new FakeDrive().config);
+  vi.mocked(api.writeDocument).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ id: 'note-id', name: 'tonote.note.n.json' });
+  await expect(sendPending(gateway)).rejects.toThrow('offline');
+  expect((await attachmentsRepo.get('file'))?.uploadedId).toBe('first');
+  await sendPending(gateway);
+  expect(vi.mocked(api.uploadNamedBlob).mock.calls.map(call => call[0])).toEqual(['first', 'replacement']);
+  expect(await attachmentsRepo.get('file')).toBeUndefined();
+  expect(await db.outbox.count()).toBe(0);
 });

@@ -5,9 +5,14 @@ import { isDeleted, type DeletedNote, type NoteDocument } from './types';
 import { sameNote } from './serialize';
 import { assertWritable } from '../state/accessStore';
 
-export function marker(note: NoteDocument, edited = note.edited): DeletedNote {
-  const trashedAt = note.trashedAt ?? edited;
-  return { schemaVersion: 3, id: note.id, deleted: true, edited, trashedAt, purgeAfter: note.purgeAfter ?? trashedAt + TRASH_DAYS * DAY_MS };
+export function marker(note: NoteDocument, edited = note.edited, autoExpired = false): DeletedNote {
+  return { schemaVersion: 3, id: note.id, deleted: true, edited, ...(autoExpired ? { autoExpired: true as const } : {}) };
+}
+export function expireTrash(doc: NoteDocument, now: number): NoteDocument {
+  if (isDeleted(doc) || doc.state < 2) return doc;
+  if (doc.iv) return marker(doc);
+  const deadline = doc.edited + TRASH_DAYS * DAY_MS;
+  return deadline <= now ? marker(doc, deadline, true) : doc;
 }
 export async function localDocument(id: string): Promise<NoteDocument | undefined> {
   return (await db.syncRecords.get(id))?.tombstone ?? await db.notes.get(id);
@@ -28,16 +33,24 @@ export async function saveNote(note: Note): Promise<void> {
   assertWritable();
   await db.transaction('rw', db.notes, db.kv, db.outbox, db.syncRecords, db.cleanup, async () => {
     assertWritable();
-    await scheduleCleanup(await localDocument(note.id), note);
+    const current = await localDocument(note.id);
+    if (current && !isDeleted(current) && current.state >= 2) throw new Error('Restore the note before editing it');
+    await discardRemovedBytes(current, note);
+    await scheduleCleanup(current, note);
     await queueNote(note);
   });
 }
-export async function scheduleCleanup(before: NoteDocument | undefined, after: NoteDocument): Promise<void> {
+export async function discardRemovedBytes(before: NoteDocument | undefined, after: NoteDocument) {
   if (!before || isDeleted(before)) return;
+  const retained = new Set(isDeleted(after) ? [] : after.attachments.map(item => item.id));
+  for (const item of before.attachments) if (!retained.has(item.id)) await db.kv.delete(`attachment:${item.id}`);
+}
+export async function scheduleCleanup(before: NoteDocument | undefined, after: NoteDocument): Promise<void> {
   const retained = new Set(isDeleted(after) ? [] : after.attachments.map(a => a.id));
-  for (const attachment of before.attachments) if (!retained.has(attachment.id)) {
-    const id = `${after.id}:${attachment.id}`;
-    await db.cleanup.put({ id, noteId: after.id, attachmentId: attachment.id });
+  const candidates = new Set(before && !isDeleted(before) ? before.attachments.map(a => a.id) : []);
+  for (const attachmentId of candidates) if (!retained.has(attachmentId)) {
+    const id = `${after.id}:${attachmentId}`;
+    await db.cleanup.put({ id, noteId: after.id, attachmentId });
   }
 }
 export async function unchanged(snapshot: NoteDocument): Promise<boolean> {

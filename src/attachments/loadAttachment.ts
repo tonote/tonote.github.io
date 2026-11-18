@@ -2,6 +2,7 @@ import { sessionToken, sessionActive } from '../sync/session';
 import type { Attachment } from '../domain/types';
 import { attachmentsRepo } from '../db/attachmentsRepo';
 import { downloadBlob, findFileByName, findFolder } from '../gateway/drive';
+import { attachmentFileName } from '../sync/constants';
 
 export async function loadAttachment(attachment: Attachment): Promise<Blob> {
   const token = sessionToken();
@@ -14,8 +15,7 @@ export async function loadAttachment(attachment: Attachment): Promise<Blob> {
     const folder = await findFolder('Notes Backup (com.gcteam.tonote)');
     guard();
     if (!folder) throw new Error('Attachment folder not found');
-    // Current names include the owner; historical Android backups use the bare UUID.
-    const file = (attachment.noteId ? await lookup(`tonote.attach.${attachment.noteId}.${attachment.id}`, folder.id) : null)
+    const file = (attachment.noteId ? await lookup(attachmentFileName(attachment.noteId, attachment.id), folder.id) : null)
       ?? await lookup(attachment.id, folder.id);
     if (!file) throw new Error('Attachment not found');
     fileId = file.id;

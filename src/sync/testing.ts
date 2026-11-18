@@ -1,12 +1,13 @@
 import type { SyncGateway } from './gatewayTypes';
 import type { DriveFile } from '../gateway/driveTypes';
 import type { Note } from '../domain/types';
-import type { NoteDocument, RemoteDocument, SyncConfig } from './types';
+import type { NoteDocument, RemoteDocument, SyncConfig, CleanupTask } from './types';
 import type { LegacyBackupContent } from './legacyTypes';
 import { noteFileName } from './constants';
 import { DEFAULT_CATEGORY } from '../domain/color';
 import { OptimisticLockError } from './gatewayTypes';
 import { isDeleted } from './types';
+import { db } from '../db/database';
 
 export function note(id: string, options: Partial<Note> = {}): Note {
   return { id, edited: 100, created: 1, title: id, content: 'text', checkings: '', state: 0, color: DEFAULT_CATEGORY, pinned: false, priority: 0, notify: false, showInWidget: false, attachments: [], events: [], ...options };
@@ -19,7 +20,7 @@ export class FakeDrive implements SyncGateway {
   afterRead?: (id: string) => Promise<void>;
   afterWrite?: (doc: NoteDocument) => Promise<void>;
   attachmentIds = new Set<string>();
-  pendingAttachmentIds = new Set<string>();
+  pendingUploadIds = new Set<string>();
   failedAttachmentIds = new Set<string>();
   attachmentUploads = 0;
   protectedIds = new Set<string>();
@@ -45,16 +46,20 @@ export class FakeDrive implements SyncGateway {
   }
   async uploadPendingAttachments(_folder: string, value: Note) {
     for (const item of value.attachments) {
-      if (!this.pendingAttachmentIds.has(item.id)) continue;
+      if (!this.pendingUploadIds.has(item.id)) continue;
       if (this.failedAttachmentIds.has(item.id)) throw new Error('Attachment upload failed');
-      this.attachmentIds.add(item.id); this.pendingAttachmentIds.delete(item.id); this.attachmentUploads++;
+      this.attachmentIds.add(item.id); this.pendingUploadIds.delete(item.id); this.attachmentUploads++;
     }
   }
-  async ownedAttachmentIds() { return []; }
-  async cleanupAttachment(_folder: string, id: string, attachment: string) {
-    const doc = this.documents.get(id)?.value;
-    if (!doc || (!isDeleted(doc) && doc.attachments.some(a => a.id === attachment)) || this.protectedIds.has(attachment)) return false;
-    this.cleaned.push(attachment); return true;
+  async maintainAttachments(_folder: string, published: NoteDocument[], tasks: CleanupTask[]) {
+    const references = new Set(published.flatMap(doc => isDeleted(doc) ? [] : doc.attachments.map(a => a.id)));
+    const local = new Set((await db.notes.toArray()).flatMap(note => note.attachments.map(a => a.id)));
+    const collected: string[] = [];
+    for (const id of new Set([...this.attachmentIds, ...tasks.map(task => task.attachmentId)])) {
+      if (references.has(id) || local.has(id) || this.protectedIds.has(id) || this.pendingUploadIds.has(id)) continue;
+      this.attachmentIds.delete(id); this.cleaned.push(id); collected.push(id);
+    }
+    return collected;
   }
   async readLegacy() { return this.legacy; }
 }
