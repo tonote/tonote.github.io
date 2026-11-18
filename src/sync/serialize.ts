@@ -1,3 +1,4 @@
+import { DAY_MS, TRASH_DAYS } from './constants';
 import type { Note } from '../domain/types';
 import { DEFAULT_CATEGORY, DEFAULT_CATEGORY_ID } from '../domain/color';
 import { normalizeEncodedBytes, base64ToBytes } from '../crypto/aes';
@@ -22,8 +23,8 @@ export function parseNote(json: string, expectedId?: string, legacy = false): No
   if (!legacy && value.schemaVersion !== 3) throw new Error('Unsupported note schema');
   if (expectedId && value.id !== expectedId) throw new Error('Note ID does not match its Drive file');
   if (value.deleted === true) {
-    if (!finite(value.trashedAt) || !finite(value.purgeAfter)) throw new Error('Invalid deletion marker');
-    return { schemaVersion: 3, id: value.id as string, deleted: true, edited: value.edited as number, trashedAt: value.trashedAt, purgeAfter: value.purgeAfter };
+    if (value.autoExpired !== undefined && typeof value.autoExpired !== 'boolean') throw new Error('Invalid deletion marker');
+    return { schemaVersion: 3, id: value.id as string, deleted: true, edited: value.edited as number, ...(value.autoExpired === true ? { autoExpired: true } : {}) };
   }
   for (const key of ['title', 'content', 'checkings']) if (typeof value[key] !== 'string') throw new Error(`Invalid note ${key}`);
   if (!finite(value.created) || ![0, 1, 2, 3].includes(value.state as number) || !Array.isArray(value.attachments) || !Array.isArray(value.events)) throw new Error('Invalid note fields');
@@ -42,9 +43,7 @@ export function parseNote(json: string, expectedId?: string, legacy = false): No
     if (value.encryptionSalt != null) value.encryptionSalt = bytes(value.encryptionSalt, 16);
     if (!legacy && !value.encryptionSalt) throw new Error('Encrypted note is missing encryptionSalt');
   } else { delete value.iv; delete value.encryptionSalt; }
-  if (value.state === 2 || value.state === 3) {
-    if (!legacy && (!finite(value.trashedAt) || !finite(value.purgeAfter))) throw new Error('Trash note is missing retention times');
-  }
+  if (value.autoExpired !== undefined) throw new Error('Unexpected autoExpired on full note');
   const colorId = typeof value.colorId === 'string' ? value.colorId : object(value.color ?? DEFAULT_CATEGORY).id;
   value.color = { ...DEFAULT_CATEGORY, id: colorId };
   value.attachments = (value.attachments as Record<string, unknown>[]).map(item => ({ ...item, noteId: value.id }));
@@ -52,8 +51,13 @@ export function parseNote(json: string, expectedId?: string, legacy = false): No
   return value as unknown as Note;
 }
 export function noteValue(doc: NoteDocument): Record<string, unknown> {
-  if (isDeleted(doc)) return { ...doc };
+  if (isDeleted(doc)) {
+    const { schemaVersion, id, deleted, edited, autoExpired } = doc;
+    return { schemaVersion, id, deleted, edited, ...(autoExpired ? { autoExpired } : {}) };
+  }
   const { color, ...value } = doc;
+  // Local-only fields or dates from development builds must not enter schema 3.
+  for (const key of ['trashedAt', 'purgeAfter', 'tempOpened']) Reflect.deleteProperty(value, key);
   return { ...value, schemaVersion: 3, colorId: color.id, attachments: doc.attachments.map(({ driveFileId: _transport, ...item }) => item) };
 }
 export function serializeNote(doc: NoteDocument): string { return JSON.stringify(noteValue(doc)); }
@@ -66,13 +70,17 @@ export function equivalent(a: unknown, b: unknown): boolean {
   return keys.length === other.length && keys.every(k => Object.hasOwn(bb, k) && equivalent(aa[k], bb[k]));
 }
 export function sameNote(a: NoteDocument, b: NoteDocument): boolean { return equivalent(noteValue(a), noteValue(b)); }
-/** Positive means the local document wins. Equal timestamps keep local, except deletion. */
-export function compareDocuments(a: { edited: number; deleted?: boolean }, b: { edited: number; deleted?: boolean }): number {
-  return a.edited - b.edited || Number(a.deleted === true) - Number(b.deleted === true);
+/** Positive means local wins; at equal user time deletion beats full content. */
+type Version = { edited: number; deleted?: boolean; autoExpired?: boolean };
+function actionTime(doc: Version): number {
+  return doc.deleted && doc.autoExpired ? doc.edited - TRASH_DAYS * DAY_MS : doc.edited;
+}
+export function compareDocuments(a: Version, b: Version): number {
+  return actionTime(a) - actionTime(b) || Number(a.deleted === true) - Number(b.deleted === true);
 }
 export function parseConfig(json: string): SyncConfig {
   const value = object(JSON.parse(json));
-  if (value.schemaVersion !== 3 || typeof value.initialized !== 'boolean' || !finite(value.trashRetentionDays) || !Array.isArray(value.colors)) throw new Error('Unsupported or invalid sync configuration');
+  if (value.schemaVersion !== 3 || typeof value.initialized !== 'boolean' || value.trashRetentionDays !== TRASH_DAYS || !Array.isArray(value.colors)) throw new Error('Unsupported or invalid sync configuration');
   const seen = new Set<string>();
   for (const raw of value.colors) {
     const color = object(raw); identity(color);

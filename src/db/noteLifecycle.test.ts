@@ -31,3 +31,14 @@ it('does not allow permanent deletion of active or archived notes', async () => 
   expect(await db.notes.get(note.id)).toEqual(note);
   expect(await db.outbox.count()).toBe(0);
 });
+it('atomically queues encrypted deletion without placing attachment data in its marker', async () => {
+  const secret = { ...createNoteDraft('plain'), title: 'secret', iv: 'cipher-iv', attachments: [{ id: 'file', name: 'secret-filename' }] };
+  await db.notes.put(secret);
+  await changeNoteState(secret.id, 'trash');
+  expect(await db.notes.get(secret.id)).toBeUndefined();
+  const deleted = (await db.syncRecords.get(secret.id))?.tombstone;
+  expect(Object.keys(deleted!).sort()).toEqual(['deleted', 'edited', 'id', 'schemaVersion']);
+  expect(deleted).not.toHaveProperty('title'); expect(deleted).not.toHaveProperty('iv');
+  expect(JSON.stringify(deleted)).not.toContain('secret-filename');
+  expect(await db.cleanup.where('noteId').equals(secret.id).count()).toBe(1);
+});

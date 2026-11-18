@@ -3,11 +3,11 @@ import { attachmentsRepo } from '../db/attachmentsRepo';
 import type { SyncGateway } from './gatewayTypes';
 import { OptimisticLockError } from './gatewayTypes';
 import type { Note } from '../domain/types';
-import type { NoteDocument, SyncConfig, RemoteDocument } from './types';
+import type { NoteDocument, SyncConfig, RemoteDocument, CleanupTask } from './types';
 import { isDeleted } from './types';
 import type { DriveFile } from '../gateway/driveTypes';
 import * as drive from '../gateway/drive';
-import { CONFIG_FILE_NAME, DRIVE_FOLDER_NAME, noteFileName, attachmentFileName, LEGACY_BACKUP_FILE } from './constants';
+import { CONFIG_FILE_NAME, DRIVE_FOLDER_NAME, noteFileName, LEGACY_BACKUP_FILE, attachmentFileName, ATTACHMENT_MAINTENANCE_BATCH_SIZE } from './constants';
 import { parseNote, parseConfig, serializeNote } from './serialize';
 import { parseLegacyBackup } from './migrate';
 import { sessionActive, sessionToken } from './session';
@@ -16,7 +16,6 @@ export class DriveGatewayAdapter implements SyncGateway {
   private folder?: string;
   private listing?: DriveFile[];
   private generation = sessionToken();
-  private protectedAttachments?: Set<string>;
   private guard() { if (!sessionActive(this.generation)) throw new DOMException('Account session ended', 'AbortError'); }
   private async allocated(name: string): Promise<string> {
     this.guard();
@@ -108,71 +107,133 @@ export class DriveGatewayAdapter implements SyncGateway {
     if (this.listing) this.listing = [...this.listing.filter(item => item.id !== file.id), file];
     return file;
   }
-  private async attachment(folder: string, noteId: string, attachmentId: string, driveFileId?: string): Promise<DriveFile | null> {
-    const names = [attachmentFileName(noteId, attachmentId), attachmentId];
+  private rememberFile(file: DriveFile, removed = false) {
+    if (this.listing) this.listing = [...this.listing.filter(item => item.id !== file.id), ...(removed ? [] : [file])];
+  }
+  private async attachment(folder: string, noteId: string, id: string, driveFileId?: string): Promise<DriveFile | null> {
+    const names = [attachmentFileName(noteId, id), id];
     const matches: DriveFile[] = [];
     for (const name of names) {
-      const file = await drive.findFileByName(name, folder); this.guard();
-      if (file && !matches.some(other => other.id === file.id)) matches.push(file);
-    }
-    if (driveFileId && !matches.some(file => file.id === driveFileId)) {
-      try {
-        const file = await drive.fileMetadata(driveFileId); this.guard();
-        matches.push(file);
-      } catch (error) {
-        // An obsolete ID can be recovered by name; permission failures remain errors.
-        if (!(error instanceof drive.DriveError) || error.status !== 404) throw error;
-      }
+      const files = this.listing ? this.listing.filter(file => file.name === name) : [await drive.findFileByName(name, folder)].filter((file): file is DriveFile => !!file);
+      this.guard();
+      for (const file of files) if (!matches.some(other => other.id === file.id)) matches.push(file);
     }
     if (matches.length > 1) throw new Error('Ambiguous attachment files');
-    return matches[0] ?? null;
+    if (matches[0]) return matches[0];
+    if (driveFileId) {
+      try {
+        const file = await drive.fileMetadata(driveFileId); this.guard();
+        if (!names.includes(file.name)) throw new Error('Attachment ID conflict');
+        return file;
+      } catch (error) { if (!(error instanceof drive.DriveError) || error.status !== 404) throw error; }
+    }
+    return null;
   }
   async uploadPendingAttachments(folder: string, note: Note): Promise<void> {
     for (const attachment of note.attachments) {
       this.guard();
       const stored = await attachmentsRepo.get(attachment.id);
-      // JSON metadata is authoritative. Existing references need no existence check.
+      // Existing JSON references never trigger checks or migration on a save.
       if (!stored?.pending) continue;
       const name = attachmentFileName(note.id, attachment.id);
-      let file = await this.attachment(folder, note.id, attachment.id, attachment.driveFileId);
+      let file = await this.attachment(folder, note.id, attachment.id, stored.uploadedId ?? attachment.driveFileId);
       if (!file) {
+        // A collected upload needs a fresh Drive ID. Keep the old confirmation
+        // until its replacement allocation is durable, including across retries.
+        if (stored.uploadedId && (await db.kv.get(`sync-create:${name}`))?.value === stored.uploadedId) {
+          await db.kv.delete(`sync-create:${name}`);
+        }
         const id = await this.allocated(name);
-        // An allocated ID from a timed-out upload may already exist.
-        try { file = await drive.fileMetadata(id); if (file.name !== name) throw new Error('Attachment ID conflict'); }
+        try { file = await drive.fileMetadata(id); this.guard(); if (file.name !== name) throw new Error('Attachment ID conflict'); }
         catch (error) {
           if (!(error instanceof drive.DriveError) || error.status !== 404) throw error;
-          file = await drive.uploadNamedBlob(id, name, stored.blob, folder);
-        }
-      } else if (file.name !== name) { await drive.renameFile(file.id, name); }
-      this.guard();
-      await attachmentsRepo.delete(attachment.id);
-    }
-  }
-  async ownedAttachmentIds(folder: string, noteId: string): Promise<string[]> {
-    await this.listNotes(folder);
-    const prefix = `tonote.attach.${noteId}.`;
-    return this.listing!.filter(file => file.name.startsWith(prefix)).map(file => file.name.slice(prefix.length)).filter(id => /^[a-z0-9_-]{1,128}$/i.test(id));
-  }
-  async cleanupAttachment(folder: string, noteId: string, attachmentId: string): Promise<boolean> {
-    const owner = await this.readNote(folder, noteId);
-    if (!owner) return false;
-    if (!isDeleted(owner.value) && owner.value.attachments.some(a => a.id === attachmentId)) return true;
-    this.protectedAttachments ??= await drive.backupAttachmentIds(folder); this.guard();
-    if (this.protectedAttachments.has(attachmentId)) return false;
-    const file = await this.attachment(folder, noteId, attachmentId);
-    if (file) {
-      // Legacy unowned names require proving that another note does not refer to them.
-      if (!file.name.startsWith(`tonote.attach.${noteId}.`)) {
-        for (const other of await this.listNotes(folder)) {
-          const id = other.name.slice('tonote.note.'.length, -'.json'.length);
-          const document = await this.readNote(folder, id, other);
-          if (!document || (!isDeleted(document.value) && document.value.attachments.some(a => a.id === attachmentId))) return false;
+          try {
+            file = await drive.uploadNamedBlob(id, name, stored.blob, folder);
+          } catch (uploadError) {
+            if (!(uploadError instanceof drive.DriveError) || uploadError.status !== 409) throw uploadError;
+            // A lost upload response can leave either a live file or a spent ID.
+            try {
+              file = await drive.fileMetadata(id); this.guard();
+              if (file.name !== name) throw new Error('Attachment ID conflict');
+            } catch (lookupError) {
+              if (!(lookupError instanceof drive.DriveError) || lookupError.status !== 404) throw lookupError;
+              await db.kv.delete(`sync-create:${name}`);
+              throw uploadError; // Keep bytes. The next attempt allocates a fresh ID.
+            }
+          }
         }
       }
-      await drive.deleteFile(file.id); this.guard();
+      // Only full maintenance has enough information to rename shared legacy files.
+      this.guard(); this.rememberFile(file);
+      await db.kv.update(`attachment:${attachment.id}`, { value: { ...stored, uploadedId: file.id } });
     }
-    await db.kv.delete(`attachment:${attachmentId}`);
-    return true;
+  }
+  private async locallyReferenced(id: string): Promise<boolean> {
+    const pending = await attachmentsRepo.get(id); this.guard();
+    if (pending?.pending) return true;
+    const notes = await db.notes.toArray(); this.guard();
+    return notes.some(note => note.attachments.some(a => a.id === id));
+  }
+  private async backupReferences(file: DriveFile): Promise<Map<string, string>> {
+    const revisions = await drive.backupRevisionIds(file.id); this.guard();
+    const version = JSON.stringify([file.id, file.version, revisions]);
+    const key = 'backup-attachment-owners';
+    const cache = (await db.kv.get(key))?.value as { version: string; owners: [string, string][] } | undefined;
+    if (file.version && cache?.version === version) return new Map(cache.owners);
+    const owners = await drive.backupAttachmentOwners(file.id, revisions); this.guard();
+    await db.kv.put({ key, value: { version, owners: [...owners] } });
+    return owners;
+  }
+  async maintainAttachments(_folder: string, published: NoteDocument[], tasks: CleanupTask[]): Promise<string[]> {
+    this.guard();
+    if (!this.listing) throw new Error('Attachment maintenance requires a complete Drive catalogue');
+    const documents = new Map(published.map(doc => [doc.id, doc]));
+    const noteFiles = this.listing.filter(file => /^tonote\.note\..+\.json$/.test(file.name));
+    if (documents.size !== noteFiles.length || noteFiles.some(file => !documents.has(file.name.slice('tonote.note.'.length, -'.json'.length)))) throw new Error('Incomplete published note snapshot');
+    const owners = new Map<string, string>();
+    for (const doc of documents.values()) if (!isDeleted(doc)) for (const attachment of doc.attachments) {
+      owners.set(attachment.id, doc.id);
+    }
+    const taskIds = new Set(tasks.map(task => task.attachmentId));
+    const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    const owned = /^tonote\.attach\.([a-z0-9_-]{1,128})\.([a-z0-9_-]{1,128})$/i;
+    const files = this.listing.flatMap(file => {
+      const match = owned.exec(file.name);
+      if (match && ((uuid.test(match[1]) && uuid.test(match[2])) || documents.has(match[1]) || owners.has(match[2]) || taskIds.has(match[2]))) return [{ file, attachmentId: match[2], owner: match[1] as string | undefined }];
+      return uuid.test(file.name) || owners.has(file.name) || taskIds.has(file.name) ? [{ file, attachmentId: file.name, owner: undefined }] : [];
+    });
+    const byName = new Map<string, DriveFile>();
+    const byAttachment = new Map<string, string>();
+    for (const item of files) {
+      if (byName.has(item.file.name) || (byAttachment.has(item.attachmentId) && byAttachment.get(item.attachmentId) !== item.file.id)) throw new Error('Ambiguous attachment files');
+      byName.set(item.file.name, item.file);
+      byAttachment.set(item.attachmentId, item.file.id);
+    }
+    const candidates = files.filter(item => !owners.has(item.attachmentId));
+    const backupFiles = this.listing.filter(file => file.name === LEGACY_BACKUP_FILE);
+    if (backupFiles.length > 1) throw new Error('Ambiguous backup files');
+    const backupOwners = candidates.length && backupFiles[0] ? await this.backupReferences(backupFiles[0]) : new Map<string, string>();
+    this.guard();
+    let mutations = 0;
+    const remaining = new Set(files.map(item => item.attachmentId));
+    for (const item of candidates) {
+      if (mutations >= ATTACHMENT_MAINTENANCE_BATCH_SIZE) break;
+      if (backupOwners.has(item.attachmentId) || await this.locallyReferenced(item.attachmentId)) continue;
+      this.guard();
+      try { await drive.deleteFile(item.file.id); }
+      catch (error) { if (!(error instanceof drive.DriveError) || error.status !== 404) throw error; }
+      this.guard(); mutations++; this.rememberFile(item.file, true); remaining.delete(item.attachmentId);
+    }
+    for (const item of files) {
+      if (mutations >= ATTACHMENT_MAINTENANCE_BATCH_SIZE) break;
+      const owner = owners.get(item.attachmentId) ?? backupOwners.get(item.attachmentId);
+      if (item.owner || !owner) continue;
+      await drive.renameFile(item.file.id, attachmentFileName(owner, item.attachmentId)); this.guard();
+      mutations++; this.rememberFile({ ...item.file, name: attachmentFileName(owner, item.attachmentId) });
+    }
+    const collected: string[] = [];
+    for (const id of taskIds) if (!remaining.has(id) && !owners.has(id) && !await this.locallyReferenced(id)) collected.push(id);
+    return collected;
   }
   async readLegacy(folder: string) {
     const file = await drive.findFileByName(LEGACY_BACKUP_FILE, folder); this.guard();

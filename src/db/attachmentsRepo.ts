@@ -1,7 +1,7 @@
 import { db } from './database';
 import { assertWritable } from '../state/accessStore';
 
-export interface StoredAttachment { blob: Blob; pending: true }
+export interface StoredAttachment { blob: Blob; pending: true; uploadedId?: string }
 const keyFor = (id: string) => `attachment:${id}`;
 
 export const attachmentsRepo = {

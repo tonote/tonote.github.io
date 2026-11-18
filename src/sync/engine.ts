@@ -6,8 +6,8 @@ import type { SyncGateway } from './gatewayTypes';
 import { PasswordSyncError } from './gatewayTypes';
 import { isDeleted, isDeletedColor, type SyncConfig, type NoteDocument, type RemoteDocument, type ColorDocument } from './types';
 import { compareDocuments, equivalent, mergeColors, sameNote } from './serialize';
-import { localDocument, marker, scheduleCleanup, unchanged } from './local';
-import { DAY_MS, TRASH_DAYS } from './constants';
+import { localDocument, expireTrash, queueNote, marker, discardRemovedBytes, scheduleCleanup, unchanged } from './local';
+import { cleanupPublished } from './cleanup';
 import { sessionToken, sessionActive } from './session';
 import type { SyncProgress } from '../state/syncStore';
 import { accessStore, selectAccessMode } from '../state/accessStore';
@@ -17,7 +17,7 @@ let serial: Promise<unknown> = Promise.resolve();
 export function exclusive<T>(operation: () => Promise<T>): Promise<T> {
   const next = serial.catch(() => {}).then(operation); serial = next.catch(() => {}); return next;
 }
-export type SyncResult = { kind: 'ok' | 'readonly'; downloaded: number; uploaded: number; deleted: number; migrated: boolean; deferred: number };
+export type SyncResult = { kind: 'ok' | 'readonly'; downloaded: number; uploaded: number; deleted: number; migrated: boolean; deferred: number; maintenanceDeferred?: true };
 function guard(token: number) { if (!sessionActive(token)) throw new DOMException('Account session ended', 'AbortError'); }
 async function colors(): Promise<ColorDocument[]> {
   const removed = (await db.kv.get('deleted-colors'))?.value as ColorDocument[] ?? [];
@@ -78,53 +78,50 @@ function checkEncryption(doc: NoteDocument, config: SyncConfig) {
 async function acknowledge(id: string, through: number) {
   await db.outbox.where('noteId').equals(id).filter(item => (item.seq ?? 0) <= through).delete();
 }
+async function acknowledgeNote(doc: NoteDocument, through: number) {
+  if (!await unchanged(doc)) return;
+  if (!isDeleted(doc) && doc.attachments.length) await db.kv.bulkDelete(doc.attachments.map(item => `attachment:${item.id}`));
+  await acknowledge(doc.id, through);
+}
 async function sendOne(gw: SyncGateway, folder: string, doc: NoteDocument, config: SyncConfig, check: () => void, active: boolean, known?: RemoteDocument<NoteDocument> | null): Promise<'sent' | 'same' | 'deferred'> {
   const through = (await db.outbox.where('noteId').equals(doc.id).toArray()).reduce((max, item) => Math.max(max, item.seq ?? 0), 0);
   const record = await db.syncRecords.get(doc.id);
   check();
   const remote = known === undefined ? await gw.readNote(folder, doc.id) : known; check();
   if (!remote && record?.remote) throw new Error(`Previously synchronized note is missing: ${doc.id}`);
-  if (remote && compareDocuments(doc, remote.value) < 0) {
+  const now = Date.now();
+  const normalized = expireTrash(doc, now);
+  if (!active && remote && compareDocuments(normalized, expireTrash(remote.value, now)) < 0) {
     await db.syncRecords.put({ ...record, id: doc.id, needsPull: true }); return 'deferred';
+  }
+  if (!active && normalized !== doc) {
+    const applied = await db.transaction('rw', db.notes, db.syncRecords, db.outbox, db.cleanup, db.kv, async () => {
+      if (!await unchanged(doc)) return false;
+      await discardRemovedBytes(doc, normalized);
+      await scheduleCleanup(doc, normalized);
+      await queueNote(normalized);
+      return true;
+    });
+    if (!applied) return 'deferred';
+    return sendOne(gw, folder, normalized, config, check, false, remote);
   }
   if (remote && sameNote(doc, remote.value)) {
     if (!isDeleted(doc)) { await gw.uploadPendingAttachments(folder, doc); check(); }
     await db.syncRecords.put({ ...record, id: doc.id, remote: remote.file, accepted: remote.value, needsPull: false });
-    if (await unchanged(doc)) await acknowledge(doc.id, through); return 'same';
+    await db.transaction('rw', db.outbox, db.notes, db.syncRecords, db.kv, async () => { await acknowledgeNote(doc, through); }); return 'same';
   }
   checkEncryption(doc, config);
   if (!isDeleted(doc)) { await gw.uploadPendingAttachments(folder, doc); check(); }
   const file = await gw.writeNote(folder, doc, remote?.file); check();
-  await db.transaction('rw', db.outbox, db.syncRecords, db.cleanup, db.notes, async () => {
+  await db.transaction('rw', db.outbox, db.syncRecords, db.cleanup, db.notes, db.kv, async () => {
     await scheduleCleanup(remote?.value ?? record?.accepted, doc);
     await db.syncRecords.put({ ...await db.syncRecords.get(doc.id), id: doc.id, remote: file, accepted: doc, needsPull: false });
-    if (await unchanged(doc)) await acknowledge(doc.id, through);
+    await acknowledgeNote(doc, through);
   });
   // Active refresh will resolve anything that changed locally after this snapshot.
-  void active;
   return 'sent';
 }
 function normalizeHierarchy(documents: Map<string, NoteDocument>, now: number): void {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [id, doc] of documents) {
-      if (isDeleted(doc) || !doc.parentId) continue;
-      const parent = documents.get(doc.parentId);
-      if (!parent || isDeleted(parent)) { documents.set(id, marker(doc)); changed = true; }
-      else if (parent.state >= 2 && doc.state < 2) {
-        documents.set(id, { ...doc, state: 3, trashedAt: parent.trashedAt ?? parent.edited, purgeAfter: parent.purgeAfter ?? parent.edited + TRASH_DAYS * DAY_MS }); changed = true;
-      } else if (parent.state < 2 && doc.state === 3) {
-        const restored = { ...doc, state: 0 as const }; delete restored.trashedAt; delete restored.purgeAfter;
-        documents.set(id, restored); changed = true;
-      }
-    }
-  }
-  let expired = false;
-  for (const [id, doc] of documents) {
-    if (!isDeleted(doc) && doc.state >= 2 && (doc.iv || (doc.purgeAfter !== undefined && doc.purgeAfter <= now))) { documents.set(id, marker(doc)); expired = true; }
-  }
-  if (expired) { normalizeHierarchy(documents, now); return; }
   for (const doc of documents.values()) {
     const visited = new Set<string>(); let current: NoteDocument | undefined = doc;
     while (current && !isDeleted(current) && current.parentId) {
@@ -132,6 +129,28 @@ function normalizeHierarchy(documents: Map<string, NoteDocument>, now: number): 
       visited.add(current.id); current = documents.get(current.parentId);
     }
   }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, doc] of documents) {
+      if (isDeleted(doc) || !doc.parentId) continue;
+      const parent = documents.get(doc.parentId);
+      if (!parent || isDeleted(parent)) { documents.set(id, parent && isDeleted(parent) ? marker(doc, parent.edited, parent.autoExpired) : marker(doc)); changed = true; }
+      else if (parent.state >= 2 && doc.state < 2) {
+        documents.set(id, { ...doc, state: 3, edited: parent.edited }); changed = true;
+      } else if (parent.state < 2 && doc.state === 3) {
+        const restored = { ...doc, state: 0 as const, edited: parent.edited };
+        documents.set(id, restored); changed = true;
+      }
+    }
+  }
+  let expired = false;
+  for (const [id, doc] of documents) {
+    const normalized = expireTrash(doc, now);
+    if (normalized !== doc) { documents.set(id, normalized); expired = true; }
+  }
+  if (expired) { normalizeHierarchy(documents, now); return; }
+
 }
 async function refresh(gw: SyncGateway, report: (p: SyncProgress) => void, token: number, canRefresh: () => boolean): Promise<SyncResult> {
   const check = () => {
@@ -175,12 +194,13 @@ async function refresh(gw: SyncGateway, report: (p: SyncProgress) => void, token
     report({ phase: 'loading', completed: i + 1, total: downloads.length });
   }
   for (const record of records) if (record.remote && !remotes.has(record.id)) throw new Error(`Previously synchronized note is missing: ${record.id}`);
+  const now = Date.now();
   const winners = new Map(locals);
   for (const [id, remote] of remotes) {
     const local = locals.get(id);
-    if (!local || compareDocuments(local, remote.value) < 0) winners.set(id, remote.value);
+    if (!local || compareDocuments(expireTrash(local, now), expireTrash(remote.value, now)) < 0) winners.set(id, remote.value);
   }
-  normalizeHierarchy(winners, Date.now());
+  normalizeHierarchy(winners, now);
   const categoryMap = new Map(config.value.colors.filter(c => !isDeletedColor(c)).map(c => [c.id, c]));
   const allowedSalts = config.value.keyRotation ? [config.value.keyRotation.from.salt, config.value.keyRotation.to.salt] : [config.value.salt];
   const work = [...winners].map(([id, raw]): [string, NoteDocument] => [id,
@@ -203,9 +223,10 @@ async function refresh(gw: SyncGateway, report: (p: SyncProgress) => void, token
       if (!doc.encryptionSalt || !allowedSalts.includes(doc.encryptionSalt)) throw new PasswordSyncError(config.value.checker ?? '', config.value.salt ?? '');
     }
     if (!snapshot || !sameNote(snapshot, doc)) {
-      const applied = await db.transaction('rw', db.notes, db.syncRecords, db.outbox, db.cleanup, async () => {
+      const applied = await db.transaction('rw', db.notes, db.syncRecords, db.outbox, db.cleanup, db.kv, async () => {
         const current = await localDocument(id);
         if (snapshot ? !current || !sameNote(current, snapshot) : !!current) return false;
+        await discardRemovedBytes(snapshot, doc);
         await scheduleCleanup(snapshot ?? remote?.value, doc);
         if (isDeleted(doc)) {
           await db.notes.delete(id); await db.syncRecords.put({ ...await db.syncRecords.get(id), id, tombstone: doc, accepted: undefined });
@@ -225,8 +246,8 @@ async function refresh(gw: SyncGateway, report: (p: SyncProgress) => void, token
       const through = (await db.outbox.where('noteId').equals(id).toArray()).reduce((m, e) => Math.max(m, e.seq ?? 0), 0);
       if (await unchanged(doc)) {
         await db.syncRecords.put({ ...await db.syncRecords.get(id), id, accepted: remote.value, remote: remote.file, needsPull: false });
-        await acknowledge(id, through);
-      }
+        await db.transaction('rw', db.outbox, db.notes, db.syncRecords, db.kv, async () => { await acknowledgeNote(doc, through); });
+      } else { deferred++; }
     }
     } catch (error) {
       if (!sessionActive(token) || (error instanceof DOMException && error.name === 'AbortError')) throw error;
@@ -242,26 +263,18 @@ async function refresh(gw: SyncGateway, report: (p: SyncProgress) => void, token
     throw new Error(`${failures.length} note(s) could not be synchronized: ${detail} [note ${first.noteId}]`);
   }
   report({ phase: 'saving' });
-  // Cleanup is active-only and never runs on a partial listing/failed refresh.
-  if (config.value.initialized && !deferred) for (const record of await db.syncRecords.toArray()) {
-    if (!record.tombstone || !record.remote?.version || record.cleanupVersion === record.remote.version) continue;
-    const current = await localDocument(record.id);
-    if (!current || !isDeleted(current)) continue;
-    for (const attachmentId of await gw.ownedAttachmentIds(folder, record.id)) {
-      check(); const id = `${record.id}:${attachmentId}`;
-      await db.cleanup.put({ id, noteId: record.id, attachmentId });
-    }
-    await db.syncRecords.update(record.id, { cleanupVersion: record.remote.version });
-  }
-  if (config.value.initialized && !deferred) for (const task of await db.cleanup.toArray()) {
-    check();
-    const local = await localDocument(task.noteId);
-    if (local && !isDeleted(local) && local.attachments.some(a => a.id === task.attachmentId)) continue;
-    if (await gw.cleanupAttachment(folder, task.noteId, task.attachmentId)) { check(); await db.cleanup.delete(task.id); }
-  }
   if (config.value.keyRotation) throw new PasswordSyncError(config.value.keyRotation.to.checker, config.value.keyRotation.to.salt, 'Password change is in progress; resume it in Settings');
   const localKeys = await indexMetaRepo.get();
   if (config.value.salt && localKeys?.salt && localKeys.salt !== config.value.salt) throw new PasswordSyncError(config.value.checker ?? '', config.value.salt);
+  if (config.value.initialized && !deferred) {
+    try { await cleanupPublished(gw, folder, check); }
+    catch (error) {
+      check();
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      // Maintenance is optional. The next complete refresh retries from Drive.
+      return { kind: 'ok', downloaded, uploaded, deleted, migrated: false, deferred, maintenanceDeferred: true };
+    }
+  }
   return { kind: 'ok', downloaded, uploaded, deleted, migrated: false, deferred };
 }
 export function fullSync(gw: SyncGateway, report: (p: SyncProgress) => void = () => {}, options: { canRefresh?: () => boolean } = {}): Promise<SyncResult> {

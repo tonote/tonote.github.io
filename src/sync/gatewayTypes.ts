@@ -1,7 +1,7 @@
 import type { Note } from '../domain/types';
 import type { DriveFile } from '../gateway/driveTypes';
 import type { LegacyBackupContent } from './legacyTypes';
-import type { NoteDocument, SyncConfig, RemoteDocument } from './types';
+import type { NoteDocument, SyncConfig, RemoteDocument, CleanupTask } from './types';
 
 export interface SyncGateway {
   findFolder(): Promise<string | null>;
@@ -12,8 +12,7 @@ export interface SyncGateway {
   readNote(folder: string, id: string, file?: DriveFile): Promise<RemoteDocument<NoteDocument> | null>;
   writeNote(folder: string, value: NoteDocument, previous?: DriveFile): Promise<DriveFile>;
   uploadPendingAttachments(folder: string, note: Note): Promise<void>;
-  ownedAttachmentIds(folder: string, noteId: string): Promise<string[]>;
-  cleanupAttachment(folder: string, noteId: string, attachmentId: string): Promise<boolean>;
+  maintainAttachments(folder: string, published: NoteDocument[], tasks: CleanupTask[]): Promise<string[]>;
   readLegacy(folder: string): Promise<LegacyBackupContent | null>;
 }
 export class OptimisticLockError extends Error {

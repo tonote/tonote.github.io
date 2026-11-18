@@ -27,8 +27,6 @@ export interface Note {
   attachments: Attachment[];
   priority: number;
   parentId?: string;     // OMITTED when null (Gson serializeNulls=false)
-  trashedAt?: number;
-  purgeAfter?: number;
   encryptionSalt?: string;
   iv?: string;           // Base64 AES IV — OMITTED when not encrypted
 }
