@@ -1,4 +1,12 @@
 {
+  "export": {
+    "title": "Export note",
+    "format": "File format",
+    "untitled": "Untitled",
+    "preparing": "Preparing…",
+    "failed": "Could not create the file. Please try again.",
+    "unencrypted": "The downloaded file can be opened without a password."
+  },
   "calendar": {
     "title": "Calendar",
     "previous": "Previous month",
@@ -134,6 +142,7 @@
     "sign_out": "Sign out",
     "donate": "Donate",
     "privacy": "Privacy policy",
+    "export_licenses": "Licenses",
     "links": "Links",
     "light": "Light",
     "dark": "Dark",

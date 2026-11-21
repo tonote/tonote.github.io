@@ -161,7 +161,7 @@ function parseListItems(ul: Element): InlineRun[][] {
 }
 
 /** Extract alignment from an element's raw style attribute. */
-function extractAlign(el: Element): Align {
+export function extractAlign(el: Element): Align {
   const styleStr = el.getAttribute('style') ?? '';
   const m = styleStr.match(/text-align\s*:\s*(\w[\w-]*)/);
   if (!m) return 'normal';
@@ -180,7 +180,7 @@ function extractRuns(el: Element): InlineRun[] {
 }
 
 /** Recursively walk inline nodes, accumulating marks. */
-function walkInline(node: Node, marks: InlineMark[], runs: InlineRun[]): void {
+export function walkInline(node: Node, marks: InlineMark[], runs: InlineRun[]): void {
   if (node.nodeType === Node.TEXT_NODE) {
     let text = node.textContent ?? '';
     if (text) {

@@ -62,7 +62,7 @@ vi.mock('../state/cryptoStore', () => {
 });
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({ t: (k: string) => k, i18n: { resolvedLanguage: 'en' } }),
 }));
 
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
@@ -414,7 +414,7 @@ it('hides note-only actions and attachments for folders', async () => {
   render(<MemoryRouter><NoteEditorScreen id="folder" /></MemoryRouter>);
   fireEvent.click(await screen.findByLabelText('common.actions'));
   expect(screen.queryByRole('button', { name: 'notes.archive' })).not.toBeInTheDocument();
-  for (const name of ['notes.encrypt', 'notes.decrypt', 'notes.create_text', 'notes.create_rich', 'notes.create_checklist', 'attachments.add']) {
+  for (const name of ['export.title', 'notes.encrypt', 'notes.decrypt', 'notes.create_text', 'notes.create_rich', 'notes.create_checklist', 'attachments.add']) {
     expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   }
   expect(document.querySelector('input[type=file]')).not.toBeInTheDocument();
@@ -522,4 +522,25 @@ it('allows a new date-only note to be saved', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'notes.save' }));
   await waitFor(async () => expect(await notesRepo.all()).toHaveLength(1));
   expect((await notesRepo.all())[0].events[0]).toMatchObject({ type: 2, when: new Date(2026, 10, 8).getTime() });
+});
+
+
+it('downloads the current draft without saving it', async () => {
+  const files = await import('../export/files');
+  const download = vi.spyOn(files, 'downloadFile').mockImplementation(() => {});
+  try {
+    await db.delete(); await db.open();
+    await notesRepo.put(makeNote('export-draft'));
+    render(<MemoryRouter><NoteEditorScreen id="export-draft" /></MemoryRouter>);
+    fireEvent.change(await screen.findByDisplayValue('Hello world'), { target: { value: 'Ещё одна строка' } });
+    fireEvent.click(screen.getByLabelText('common.actions'));
+    fireEvent.click(screen.getByRole('button', { name: 'export.title' }));
+    fireEvent.change(screen.getByLabelText('export.format'), { target: { value: 'txt' } });
+    fireEvent.click(screen.getByRole('button', { name: 'attachments.download' }));
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    const [blob, title, format] = download.mock.calls[0];
+    expect(await blob.text()).toContain('Ещё одна строка');
+    expect([title, format]).toEqual(['Test Note', 'txt']);
+    expect((await notesRepo.get('export-draft'))?.content).toBe('Hello world');
+  } finally { download.mockRestore(); }
 });
