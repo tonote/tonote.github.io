@@ -20,6 +20,7 @@ import { TitleField } from '../components/editor/TitleField';
 import { PlainBody } from '../components/editor/PlainBody';
 import { ChecklistBody } from '../components/editor/ChecklistBody';
 import { RichTextEditor } from '../editor/RichTextEditor';
+import { ExportDialog } from '../components/editor/ExportDialog';
 import { ActionMenu } from '../components/editor/ActionMenu';
 import { UnlockDialog } from '../components/UnlockDialog';
 import { Modal } from '../components/Modal';
@@ -60,6 +61,7 @@ export function NoteEditorScreen({ id: idProp }: { id?: string }) {
   const [showUnlock, setShowUnlock] = useState(false);
   const [pendingEncrypt, setPendingEncrypt] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const [exportId, setExportId] = useState<string | null>(null);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const readOnly = backupReadOnly || (!isNew && !!note && note.state !== NOTE_STATE.NONE);
   const inTrash = note?.state === NOTE_STATE.REMOVED || note?.state === NOTE_STATE.PARENT_REMOVED;
@@ -226,10 +228,12 @@ export function NoteEditorScreen({ id: idProp }: { id?: string }) {
       {!isLocked && draft && <NoteProperties note={draft} disabled={busy || readOnly} onColorChange={(color) => update({ color })} onPinToggle={() => update({ pinned: !draft.pinned })} onEncryptToggle={toggleEncryption} />}
       {!isLocked && !readOnly && <button className="btn btn-primary" type="button" onClick={() => void save()} disabled={busy || !nonempty}>{busy ? t('editor.saving') : t('notes.save')}</button>}
       {!isLocked && !readOnly && draft && !busy && <ActionMenu note={draft}
+        onExport={kind !== 'folder' ? () => setExportId(draft.id) : undefined}
         onKindChange={changeKind}
         onDelete={() => void remove()}
         onArchive={kind !== 'folder' && nonempty ? () => void save(closeTarget, true) : undefined}
         onMoveToFolder={(parentId) => { if (canMoveTo(draft.id, parentId, allNotes)) update({ parentId }); }} />}
+      {readOnly && !isLocked && draft && kind !== 'folder' && <button className="btn" type="button" disabled={busy} onClick={() => setExportId(draft.id)}>{t('export.title')}</button>}
       {readOnly && !backupReadOnly && <>
         <button className="btn" type="button" disabled={busy} onClick={() => void lifecycle('restore')}>{t('notes.restore')}</button>
         <button className="btn danger-btn" type="button" disabled={busy} onClick={() => inTrash ? setConfirmPurge(true) : void remove()}>{t(inTrash ? 'notes.delete_forever' : 'notes.delete')}</button>
@@ -263,6 +267,7 @@ export function NoteEditorScreen({ id: idProp }: { id?: string }) {
         }} />}
       {!isNew && <div className="editor-updated"><span>{t('notes.created')}: {new Date(draft.created).toLocaleString()}</span><span>{t('notes.edited')}: {new Date(draft.edited).toLocaleString()}</span></div>}
     </fieldset></div>}
+    {!isLocked && draft && exportId === draft.id && kind !== 'folder' && <ExportDialog note={draft} onClose={() => setExportId(null)} />}
     <UnlockDialog open={showUnlock} onClose={unlockClose} />
     {confirmPurge && <Modal label={t('notes.delete_forever')} onClose={() => { if (!busy) setConfirmPurge(false); }}>
       <h2>{t('notes.delete_forever')}</h2><p>{t('notes.confirm_delete_forever')}</p>

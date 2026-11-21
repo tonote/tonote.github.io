@@ -9,6 +9,7 @@ interface ActionMenuProps {
   note: Note;
   onKindChange: (kind: NoteKind) => void;
   onDelete: () => void;
+  onExport?: () => void;
   onArchive?: () => void;
   onMoveToFolder?: (folderId: string) => void;
 }
@@ -17,6 +18,7 @@ export function ActionMenu({
   note,
   onKindChange,
   onDelete,
+  onExport,
   onArchive,
   onMoveToFolder,
 }: ActionMenuProps) {
@@ -124,6 +126,12 @@ export function ActionMenu({
           </div>}
 
           <div className="menu-divider" />
+
+          {onExport && <button type="button" onClick={() => {
+            menuRef.current?.querySelector<HTMLButtonElement>('.menu-toggle')?.focus();
+            setOpen(false);
+            onExport();
+          }}>{t('export.title')}</button>}
 
           {kind !== 'folder' && onArchive && <button onClick={() => { onArchive(); setOpen(false); }} type="button">
             {t('notes.archive')}
