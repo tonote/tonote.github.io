@@ -192,6 +192,11 @@ export function SettingsScreen() {
             {t('settings.privacy')}
           </a>
         </div>
+        <div className="settings-row">
+          <a href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener noreferrer">
+            {t('settings.export_licenses')}
+          </a>
+        </div>
       </section>
 
       <section className="settings-section">

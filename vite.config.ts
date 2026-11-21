@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['to-note.ico', 'icon-192.png', '.nojekyll'],
+        includeAssets: ['to-note.ico', 'icon-192.png', '.nojekyll', 'THIRD_PARTY_NOTICES.txt'],
         manifest: {
           name: 'ToNote',
           short_name: 'ToNote',
